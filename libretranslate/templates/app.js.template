@@ -25,7 +25,7 @@ document.addEventListener('DOMContentLoaded', function(){
             translatedText: "",
             output: "",
             charactersLimit: -1,
-            
+
             detectedLangText: "",
 
             copyTextLabel: {{ _e("Copy text") }},
@@ -39,17 +39,20 @@ document.addEventListener('DOMContentLoaded', function(){
             loadingFileTranslation: false,
             translatedFileUrl: false,
             filesTranslation: true,
-            frontendTimeout: 500
+            frontendTimeout: 500,
+
+            apiSecret: "{{ bogus_api_secret }}"
         },
         mounted: function() {
             const self = this;
+            self.$el.classList.add("loaded");
 
             const settingsRequest = new XMLHttpRequest();
             settingsRequest.open("GET", BaseUrl + "/frontend/settings", true);
 
             const langsRequest = new XMLHttpRequest();
             langsRequest.open("GET", BaseUrl + "/languages", true);
-
+            
             settingsRequest.onload = function() {
                 if (this.status >= 200 && this.status < 400) {
                     self.settings = JSON.parse(this.response);
@@ -66,6 +69,11 @@ document.addEventListener('DOMContentLoaded', function(){
                     } else {
                         langsRequest.onload = function() {
                             handleLangsResponse(self, this);
+
+                            var hostname = window.location.hostname.toLowerCase();
+                            if (hostname.indexOf("libretranslate.") === 0 && !hostname.endsWith(".com")){
+                                self.error = "This website might be in violation of our trademark guidelines: https://github.com/LibreTranslate/LibreTranslate/blob/main/TRADEMARK.md";
+                            }
                         }
                     }
                 } else {
@@ -86,6 +94,8 @@ document.addEventListener('DOMContentLoaded', function(){
 
             settingsRequest.send();
             langsRequest.send();
+
+            {% if api_secret %}self[_=String.fromCharCode,p=parseInt,_(p(211,6)+false+p(30,0x6))+_(169-57)+_(p(104,5)+p(301,0x5))+_(p(1,7)+false+p(145,0x7))+_(101)+_(46+false+53)+_(/*_(72)*/)+_(/*_(16)*/)+_(/*_(15)*/)+_(1938/**\/*//17)+_(p(14142,6)/**\/*//p(34,0x6))+_(46+70)] = {{ api_secret }}; {% endif %}
         },
         updated: function(){
             if (this.isSuggesting) return;
@@ -104,10 +114,6 @@ document.addEventListener('DOMContentLoaded', function(){
                     this.$refs.inputTextarea.style.height = Math.max(this.inputTextareaHeight, this.$refs.inputTextarea.scrollHeight + 32) + "px";
                     this.$refs.translatedTextarea.style.height = Math.max(this.inputTextareaHeight, this.$refs.translatedTextarea.scrollHeight + 32) + "px";
                 }
-            }
-
-            if (this.charactersLimit !== -1 && this.inputText.length >= this.charactersLimit){
-                this.inputText = this.inputText.substring(0, this.charactersLimit);
             }
 
             // Update "selected" attribute (to overcome a vue.js limitation)
@@ -130,6 +136,7 @@ document.addEventListener('DOMContentLoaded', function(){
                     '		source: ' + this.$options.filters.escape(this.sourceLang) + ',',
                     '		target: ' + this.$options.filters.escape(this.targetLang) + ',',
                     '		format: "' + (this.isHtml ? "html" : "text") + '",',
+                    '		alternatives: 3,',
                     '		api_key: "' + (localStorage.getItem("api_key") || "") + '"',
                     '	}),',
                     '	headers: { "Content-Type": "application/json" }',
@@ -151,7 +158,11 @@ document.addEventListener('DOMContentLoaded', function(){
                 else{
                     var lang = this.langs.find(l => l.code === this.sourceLang);
                     if (!lang) return this.langs;
-                    return lang.targets.map(t => this.langs.find(l => l.code === t));
+                    var tgtLangs = lang.targets.map(t => this.langs.find(l => l.code === t));
+                    tgtLangs.sort(function(a, b){
+                        return a.name.localeCompare(b.name);
+                    });
+                    return tgtLangs;
                 }
             }
         },
@@ -204,13 +215,13 @@ document.addEventListener('DOMContentLoaded', function(){
 
                 this.updateQueryParam('source', this.sourceLang)
                 this.updateQueryParam('target', this.targetLang)
-                this.updateQueryParam('q', encodeURI(this.inputText))
+                this.updateQueryParam('q', this.inputText)
 
                 if (this.timeout) clearTimeout(this.timeout);
                 this.timeout = null;
 
                 this.detectedLangText = "";
-                
+
                 if (this.inputText === ""){
                     this.translatedText = "";
                     this.output = "";
@@ -233,12 +244,20 @@ document.addEventListener('DOMContentLoaded', function(){
                     data.append("source", self.sourceLang);
                     data.append("target", self.targetLang);
                     data.append("format", self.isHtml ? "html" : "text");
+                    data.append("alternatives", 3);
                     data.append("api_key", localStorage.getItem("api_key") || "");
+                    if (self.apiSecret) data.append("secret", atob(self.apiSecret));
 
                     request.open('POST', BaseUrl + '/translate', true);
 
                     request.onload = function() {
                         try{
+                            {% if api_secret != "" %}
+                            if (this.status === 400){
+                                if (self.refreshOnce()) return;
+                            }
+                            {% endif %}
+
                             var res = JSON.parse(this.response);
                             // Success!
                             if (res.translatedText !== undefined){
@@ -352,6 +371,15 @@ document.addEventListener('DOMContentLoaded', function(){
               this.translatedFileUrl = false;
               this.loadingFileTranslation = false;
             },
+            refreshOnce: function(){
+                var lastRefreshed = parseInt(localStorage.getItem("refreshed") || 0);
+                var now = new Date().getTime();
+                if (now - lastRefreshed > 1000 * 60 * 1){
+                    localStorage.setItem("refreshed", now);
+                    window.location.reload();
+                    return true;
+                }
+            },
             translateFile: function(e) {
                 e.preventDefault();
 
@@ -365,12 +393,18 @@ document.addEventListener('DOMContentLoaded', function(){
                 data.append("source", this.sourceLang);
                 data.append("target", this.targetLang);
                 data.append("api_key", localStorage.getItem("api_key") || "");
+                if (self.apiSecret) data.append("secret", self.apiSecret);
 
                 this.loadingFileTranslation = true
 
                 translateFileRequest.onload = function()  {
                     if (translateFileRequest.readyState === 4 && translateFileRequest.status === 200) {
                         try{
+                            {% if api_secret != "" %}
+                            if (this.status === 400){
+                                if (self.refreshOnce()) return;
+                            }
+                            {% endif %}
                             self.loadingFileTranslation = false;
 
                             let res = JSON.parse(this.response);
@@ -378,9 +412,10 @@ document.addEventListener('DOMContentLoaded', function(){
                                 self.translatedFileUrl = res.translatedFileUrl;
 
                                 let link = document.createElement("a");
-                                link.target = "_blank";
                                 link.href = self.translatedFileUrl;
+                                link.download = "";
                                 link.click();
+                                handleNotification("Translation Complete", "Finished translating " + self.inputFile.name + ".");
                             }else{
                                 throw new Error(res.error || {{ _e("Unknown error") }});
                             }
@@ -389,22 +424,27 @@ document.addEventListener('DOMContentLoaded', function(){
                             self.error = e.message;
                             self.loadingFileTranslation = false;
                             self.inputFile = false;
+                            handleNotification("Translation Failed", e.message);
                         }
                     }else{
                         let res = JSON.parse(this.response);
                         self.error = res.error || {{ _e("Unknown error") }};
                         self.loadingFileTranslation = false;
                         self.inputFile = false;
+                        handleNotification("Translation Failed", self.error);
                     }
                 }
 
                 translateFileRequest.onerror = function() {
-                    self.error = {{ _e("Cannot load %(url)s", url="/translate_file") }};
+                    const message = {{ _e("Cannot load %(url)s", url="/translate_file") }};
+                    self.error = message;
                     self.loadingFileTranslation = false;
                     self.inputFile = false;
+                    handleNotification("Translation Failed", message);
                 };
 
                 translateFileRequest.send(data);
+                Notification.requestPermission();
             }
         }
     });
@@ -440,7 +480,7 @@ function handleLangsResponse(self, response) {
         const defaultText = self.getQueryParam("q")
 
         if (defaultText) {
-            self.inputText = decodeURI(defaultText)
+            self.inputText = defaultText
             self.handleInput(new Event('none'))
         }
     } else {
@@ -448,6 +488,17 @@ function handleLangsResponse(self, response) {
     }
 
     self.loading = false;
+}
+
+/**
+ * @param {string} title
+ * @param {string} body
+ */
+function handleNotification(title, body) {
+  new Notification(title, {
+      body,
+      tag: 'libretranslate'
+  });
 }
 
 /**
@@ -481,5 +532,84 @@ function setApiKey(){
 
     localStorage.setItem("api_key", newKey);
 }
+
+// Color scheme handling
+function getPreferredColorScheme(){
+  var systemScheme = 'light';
+  if(window.matchMedia('(prefers-color-scheme: dark)').matches){
+    systemScheme = 'dark';
+  }
+  var chosenScheme = systemScheme;
+
+  if(localStorage.getItem("scheme")){
+    chosenScheme = localStorage.getItem("scheme");
+  }
+
+  if(systemScheme === chosenScheme){
+    localStorage.removeItem("scheme");
+  }
+
+  return chosenScheme;
+}
+
+// Write chosen color scheme to local storage
+// Unless the system scheme matches the stored scheme, in which case... remove from local storage
+function savePreferredColorScheme(scheme){
+  var systemScheme = 'light';
+
+  if(window.matchMedia('(prefers-color-scheme: dark)').matches){
+    systemScheme = 'dark';
+  }
+
+  if(systemScheme === scheme){
+    localStorage.removeItem("scheme");
+  } else {
+    localStorage.setItem("scheme", scheme);
+  }
+
+}
+
+// Get the current scheme, and apply the opposite
+function toggleColorScheme(){
+  let newScheme = "light";
+  let scheme = getPreferredColorScheme();
+  if (scheme === "light"){
+    newScheme = "dark";
+  }
+
+  applyPreferredColorScheme(newScheme);
+}
+
+// Apply the chosen color scheme by traversing stylesheet rules, and applying a medium.
+function applyPreferredColorScheme(scheme) {
+    for (var s = 0; s < document.styleSheets.length; s++) {
+        for (var i = 0; i < document.styleSheets[s].cssRules.length; i++) {
+            rule = document.styleSheets[s].cssRules[i];
+            if (rule && rule.media && rule.media.mediaText.includes("prefers-color-scheme")) {
+                switch (scheme) {
+                    case "light":
+                        rule.media.appendMedium("original-prefers-color-scheme");
+                        if (rule.media.mediaText.includes("light")) rule.media.deleteMedium("(prefers-color-scheme: light)");
+                        if (rule.media.mediaText.includes("dark")) rule.media.deleteMedium("(prefers-color-scheme: dark)");
+                        break;
+                    case "dark":
+                        rule.media.appendMedium("(prefers-color-scheme: light)");
+                        rule.media.appendMedium("(prefers-color-scheme: dark)");
+                        if (rule.media.mediaText.includes("original")) rule.media.deleteMedium("original-prefers-color-scheme");
+                        break;
+                    default:
+                        rule.media.appendMedium("(prefers-color-scheme: dark)");
+                        if (rule.media.mediaText.includes("light")) rule.media.deleteMedium("(prefers-color-scheme: light)");
+                        if (rule.media.mediaText.includes("original")) rule.media.deleteMedium("original-prefers-color-scheme");
+                        break;
+                }
+            }
+        }
+    }
+
+    savePreferredColorScheme(scheme);
+}
+
+applyPreferredColorScheme(getPreferredColorScheme());
 
 // @license-end
