@@ -9,8 +9,8 @@ msgstr ""
 "Project-Id-Version: LibreTranslate 1.3.9\n"
 "Report-Msgid-Bugs-To: EMAIL@ADDRESS\n"
 "POT-Creation-Date: 2026-01-21 10:25-0500\n"
-"PO-Revision-Date: 2026-06-17 15:01+0000\n"
-"Last-Translator: Mostafa Ahangarha <ahangarha@gmail.com>\n"
+"PO-Revision-Date: 2026-08-08 15:51+0000\n"
+"Last-Translator: Goudarz Jafari <hi@goudarzjafari.com>\n"
 "Language-Team: Persian <https://hosted.weblate.org/projects/libretranslate/"
 "app/fa/>\n"
 "Language: fa\n"
@@ -18,7 +18,7 @@ msgstr ""
 "Content-Type: text/plain; charset=utf-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
-"X-Generator: Weblate 2026.7.dev0\n"
+"X-Generator: Weblate 2026.9.dev0\n"
 "Generated-By: Babel 2.12.1\n"
 
 #: libretranslate/app.py:97
@@ -272,7 +272,7 @@ msgstr "پرتغالی"
 
 #: libretranslate/locales/.langs.py:37
 msgid "Portuguese (Brazil)"
-msgstr "پرتغالی (Brazil)"
+msgstr "پرتغالی (برزیل)"
 
 #: libretranslate/locales/.langs.py:38
 msgid "Romanian"
